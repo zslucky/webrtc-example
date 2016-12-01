@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+
+  <meta charset="utf-8">
+
+  <title>Chapt 1 - Demo 3</title>
+
+  <body>
+
+    <p><button id="button">photo</button></p>
+    <video id="video" autoplay></video>
+    <img id="img" src="">
+    <canvas id="canvas" style="display:none;"></canvas>
+
+    <script>
+      var video = document.querySelector('#video');
+      var canvas = document.querySelector('#canvas');
+      var button = document.querySelector('#button');
+      var ctx = canvas.getContext('2d');
+      var localMediaStream = null;
+
+      function snapshot() {
+        if (localMediaStream) {
+          ctx.drawImage(video, 0, 0);
+          // "image/webp" works in Chrome.
+          // Other browsers will fall back to image/png.
+          document.querySelector('#img').src = canvas.toDataURL('image/webp');
+        }
+      }
+
+      button.addEventListener('click', snapshot, false);
+
+      // Not showing vendor prefixes or code that works cross-browser.
+      navigator.getUserMedia({video: true}, function(stream) {
+        video.src = window.URL.createObjectURL(stream);
+        localMediaStream = stream;
+      }, function() {});
+    </script>
+
+  </body>
+
+</html>

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+
+  <meta charset="utf-8">
+
+  <title>Chapt 1 - Demo 2</title>
+
+  <body>
+
+    <h1>videoVga:</h1>
+    <p>
+      See <a href="demo1.html">Demo 1</a>. as 1 camera can only used once
+    </p>
+
+
+    <h1>videoHD:</h1>
+    <video id="videoHD" autoplay></video>
+
+    <script>
+      var errorCallback = function(e) {
+        console.log('Reeeejected!', e);
+      };
+
+      var loadMedia = function(videoObj, localMediaStream) {
+        videoObj.src = window.URL.createObjectURL(localMediaStream);
+
+        // Note: onloadedmetadata doesn't fire in Chrome when using it with getUserMedia.
+        // See crbug.com/110938.
+        videoObj.onloadedmetadata = function(e) {
+          // Ready to go. Do some stuff.
+        };
+      };
+
+      var vgaSuccessCallback = function(localMediaStream) {
+        var video = document.querySelector('#videoVga');
+        loadMedia(video, localMediaStream);
+      };
+
+      var hdSuccessCallback = function(localMediaStream) {
+        var video = document.querySelector('#videoHD');
+        loadMedia(video, localMediaStream);
+      };
+
+      // For hd output
+      var hdConstraints = {
+        video: {
+          mandatory: {
+            minWidth: 1280,
+            minHeight: 720
+          }
+        }
+      };
+
+      // For vga normal output
+      var vgaConstraints = {
+        video: {
+          mandatory: {
+            maxWidth: 640,
+            maxHeight: 360
+          }
+        }
+      };
+
+      // Not showing vendor prefixes.
+      // navigator.getUserMedia(vgaConstraints, vgaSuccessCallback, errorCallback);
+      navigator.getUserMedia(hdConstraints, hdSuccessCallback, errorCallback);
+    </script>
+
+  </body>
+
+</html>
