@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+
+  <meta charset="utf-8">
+
+  <title>Chapt 2 - Demo 1</title>
+
+  <body>
+    <h1>Local</h1>
+    <video id="localVideo" autoplay></video>
+    <h1>Remote</h1>
+    <video id="remoteVideo" autoplay></video>
+
+    <script>
+      var servers = null;
+      var offerOptions = {
+        offerToReceiveAudio: 1,
+        offerToReceiveVideo: 1
+      };
+
+      var pc1 = new webkitRTCPeerConnection(servers);
+      var pc2 = new webkitRTCPeerConnection(servers);
+
+      var localVideo = document.querySelector('#localVideo');
+      var remoteVideo = document.querySelector('#remoteVideo');
+
+      // Set on ice candidate event handler
+      pc1.onicecandidate = function pc1onicecandidate(e) {
+        onIceCandidate(pc2, e);
+      };
+
+      pc2.onicecandidate = function pc1onicecandidate(e) {
+        onIceCandidate(pc1, e);
+      };
+
+      // Set on ice candidate event handler
+      pc1.oniceconnectionstatechange = function(e) {
+        onIceStateChange(pc1, e);
+      };
+      pc2.oniceconnectionstatechange = function(e) {
+        onIceStateChange(pc2, e);
+      };
+
+      pc2.onaddstream = gotRemoteStream;
+
+      navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: true
+      })
+      .then(function gotStream(stream) {
+        // Set local video
+        localVideo.srcObject = stream;
+        // Add strean to pc1
+        pc1.addStream(stream);
+        // Create offer for pc1
+        pc1.createOffer(
+          offerOptions
+        ).then(
+          function(desc1) {
+            // Set PC1 local description
+            pc1.setLocalDescription(desc1).then(
+              function() {},
+              errorHandler
+            );
+            // Set PC2 remote description
+            pc2.setRemoteDescription(desc1).then(
+              function() {},
+              errorHandler
+            );
+            // Create PC2's answer
+            pc2.createAnswer().then(
+              function(desc2) {
+                // Set PC2 local description
+                pc2.setLocalDescription(desc2).then(
+                  function() {},
+                  errorHandler
+                );
+                // Set PC1 remote desce=
+                pc1.setRemoteDescription(desc2).then(
+                  function() {},
+                  errorHandler
+                );
+              },
+              errorHandler
+            );
+          },
+          errorHandler
+        );
+      })
+      .catch(errorHandler);
+
+      function onIceCandidate(otherPC, event) {
+        if (event.candidate) {
+          otherPC.addIceCandidate(
+            new RTCIceCandidate(event.candidate)
+          ).then(
+            function() {
+              console.log('otherPC add candidate success!');
+            },
+            errorHandler
+          );
+        }
+      }
+
+      function onIceStateChange(pc, event) {
+        if (pc) {
+          console.log((pc === pc1 ? 'pc1' : 'pc2') + ' ICE state: ' + pc.iceConnectionState);
+          console.log('ICE state change event: ', event);
+        }
+      }
+
+      function gotRemoteStream(e) {
+        remoteVideo.srcObject = e.stream;
+      }
+
+      function errorHandler(e) {
+        console.error(e);
+      }
+
+    </script>
+
+  </body>
+
+</html>
