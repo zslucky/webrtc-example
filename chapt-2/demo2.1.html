@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+
+  <meta charset="utf-8">
+
+  <title>Chapt 2 - Demo 2</title>
+
+  <link rel="stylesheet" type="text/css" href="main.css">
+
+  <script type="text/javascript" src="../node_modules/webrtc-adapter/out/adapter.js"></script>
+  <script type="text/javascript" src="../node_modules/socket.io-client/dist/socket.io.js"></script>
+  <script type="text/javascript" src="../node_modules/jquery/dist/jquery.js"></script>
+
+  <body>
+    <div><input type="text" placeholder="your name" id="txtName" /><button id="rememberName">Submit</button></div>
+    <h1>Name: <span id="spanName"></span></h1>
+    <div id="#remoteVideos"></div>
+    <video id="localVideo" autoplay></video>
+
+    <script>
+      var socket;
+      // ---------------------------------------------------------------------------------------------
+      var txtName = $('#txtName');
+      var spanName = $('#spanName');
+      var nameBtn = $('#rememberName');
+      var localVideo = $('#localVideo');
+      var remoteVideos = $('#remoteVideos');
+      // ---------------------------------------------------------------------------------------------
+
+      var name;
+      var remotePCMap = {};
+      var localPCMap = {};
+      var localStream;
+      var offerOptions = {
+        offerToReceiveVideo: 1
+      };
+      var constraints = {
+        video: {
+          mandatory: {
+            maxWidth: 640,
+            maxHeight: 360
+          }
+        }
+      };
+
+      nameBtn.on('click', function() {
+        name = txtName.value;
+        txtName.disabled = true;
+        spanName.innerHTML = name;
+      });
+
+      navigator.getUserMedia(constraints, function(stream) {
+        localStream = stream;
+        // localVideo.src = window.URL.createObjectURL(stream);
+        socket = io.connect();
+        socket.emit('create or join', name);
+
+        socket.on('created', function() {});
+
+        socket.on('joined', function(message) {
+          // message.roomClients.length = ?
+          for (var i = 0; i < message.roomClients.length; i++) {
+            var remoteVideo = getNewVideoElement(onlineClient.pcName);
+            var onlineClient = message.roomClients[i];
+            var pc = getNewRTCPeerConnect();
+
+            remotePCMap[onlineClient.pcName] = pc;
+            createAndSendOffer(pc);
+            remoteVideos.append(remoteVideo);
+          }
+        });
+
+        socket.on('receiveOffer', function(offerDesc) {
+          var pc = getNewRTCPeerConnect();
+          var remoteVideo = getNewVideoElement(offerDesc.offerPCName);
+
+          remotePCMap[offerDesc.offerPCName] = pc;
+          pc.setRemoteDescription(offerDesc);
+          createAndSendAnswer(pc);
+          remoteVideos.append(remoteVideo);
+        });
+
+        socket.on('receiveAnswer', function(answerDesc) {
+          var remotePC = remotePCMap[answerDesc.answerPCName];
+          remotePC.setRemoteDescription(answerDesc);
+          remotePC.onaddstream = handleRemoteStreamAdded(answerDesc);
+        });
+
+        socket.on('iceCandidate', function(message) {
+          var remotePC = remotePCMap[message.remotePCName];
+          var candidate = new RTCIceCandidate({
+            candidate: message.candidate
+          });
+
+          remotePC.addIceCandidate(candidate);
+        });
+
+        // remote disconnect event to remove element.
+        socket.on('disconnect', function() {});
+
+      }, errorHandle);
+
+      // ---------------------------------------------------------------------------------------------
+      function createAndSendOffer(pc) {
+        pc.createOffer(offerOptions)
+          .then(function(offerDesc) {
+            offerDesc.offerPCName = name;
+            pc.setLocalDescription(offerDesc);
+            socket.emit('sendOffer', offerDesc);
+          });
+      }
+
+      function createAndSendAnswer(pc) {
+        pc.createAnswer()
+          .then(function(answerDesc) {
+            answerDesc.answerPCName = name;
+            pc.setLocalDescription(answerDesc);
+            socket.emit('sendAnswer', answerDesc);
+          });
+      }
+
+      function getNewRTCPeerConnect() {
+        var  pc = new RTCPeerConnection(null);
+        pc.onicecandidate = handleIceCandidate;
+        return pc;
+      }
+
+      function handleIceCandidate(event) {
+        if (event.candidate) {
+          sendMessage({
+            type: 'candidate',
+            candidate: event.candidate.candidate
+          });
+        }
+      }
+
+      function handleRemoteStreamAdded(answerDesc) {
+        var videoElement = $("#remote_" + answerDesc.answerPCName);
+
+        return function(event) {
+          videoElement.src = window.URL.createObjectURL(event.stream);
+        }
+      }
+
+
+      // ---------------------------------------------------------------------------------------------
+      function errorHandle(e) {
+        cobsole.log(e);
+      }
+
+      function sendMessage(message){
+        if (typeof message === 'object') {
+          message = JSON.stringify(message);
+        }
+        socket.emit('message', message);
+      }
+
+      function getNewVideoElement(pcName) {
+        return $('<video id="remote_' + pcName + '"></video>');
+      }
+    </script>
+
+  </body>
+
+</html>
