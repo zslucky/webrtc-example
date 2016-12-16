@@ -9,7 +9,8 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "jquery": "^3.1.1",
+    "jquery": "1.9",
+    "lodash": "^4.17.2",
     "node-static": "^0.7.9",
     "socket.io": "^1.7.1",
     "webrtc-adapter": "^2.1.0"

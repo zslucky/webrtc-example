@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+
+  <meta charset="utf-8">
+
+  <title>Chapt 3 - Demo 1</title>
+
+  <link rel="stylesheet" type="text/css" href="main.css">
+
+  <script type="text/javascript" src="../node_modules/webrtc-adapter/out/adapter.js"></script>
+  <script type="text/javascript" src="../node_modules/socket.io-client/dist/socket.io.js"></script>
+  <script type="text/javascript" src="../node_modules/jquery/jquery.js"></script>
+
+  <body>
+    <div id="remoteVideos"></div>
+    <video id="localVideo" autoplay></video>
+
+    <script>
+      var socket;
+      // ---------------------------------------------------------------------------------------------
+      var localVideo = $('#localVideo');
+      var remoteVideos = $('#remoteVideos');
+      // ---------------------------------------------------------------------------------------------
+      var myId;
+      var remotePCMap = {};
+      var localPCMap = {};
+      var localStream;
+      var sdpConstraints = {
+        'mandatory': {
+          'OfferToReceiveAudio':true,
+          'OfferToReceiveVideo':true
+        }
+      };
+      var constraints = {
+        video: {
+          mandatory: {
+            maxWidth: 640,
+            maxHeight: 360
+          }
+        }
+      };
+
+      navigator.getUserMedia(constraints, function(stream) {
+        console.log(stream);
+        localStream = stream;
+        localVideo.prop('src', window.URL.createObjectURL(stream));
+        console.log('---------------------LocalStrem Ready--------------------------');
+        socket = io.connect();
+        socket.emit('create or join', {room: 'testRoom', name: name});
+
+        socket.on('created', function(message) {
+          myId = message.myId;
+        });
+
+        socket.on('joined', function(message) {
+          myId = message.myId;
+
+          for (var i = 0; i < message.roomClients.length; i++) {
+            var clientId = message.roomClients[i];
+
+            var remoteVideo = getNewVideoElement(clientId);
+            remoteVideos.append(remoteVideo);
+
+            var pc = getNewPeerConnectionByRemoteId(clientId);
+            remotePCMap[clientId] = pc;
+
+            pc.addStream(stream);
+            createAndSendOffer(pc, myId, clientId);
+          }
+        });
+
+        socket.on('receiveOffer', function(message) {
+          var remoteVideo = getNewVideoElement(message.myId);
+          remoteVideos.append(remoteVideo);
+
+          var pc = getNewPeerConnectionByRemoteId(message.myId);
+          remotePCMap[message.myId] = pc;
+
+          console.log('receive offer from: ', message.myId);
+          pc.addStream(stream);
+          pc.setRemoteDescription(new RTCSessionDescription(message.desc));
+          createAndSendAnswer(pc, myId, message.myId);
+        });
+
+        socket.on('receiveAnswer', function(message) {
+          var remotePC = remotePCMap[message.myId];
+
+          console.log('receive answer from: ', message.myId);
+          remotePC.setRemoteDescription(new RTCSessionDescription(message.desc));
+        });
+
+        socket.on('iceCandidate', function(message) {
+          var remotePC = remotePCMap[message.myId];
+          var candidate = new RTCIceCandidate({
+            candidate: message.candidate,
+            sdpMLineIndex: message.label
+          });
+
+          console.log('receive iceCandidate from: ', message.myId);
+          remotePC.addIceCandidate(candidate);
+        });
+
+        // remote disconnect event to remove element.
+        socket.on('disconnect', function() {});
+      }, errorHandle);
+
+      // ---------------------------------------------------------------------------------------------
+      function createAndSendOffer(pc, myId, remoteId) {
+        pc.createOffer(function(offerDesc) {
+          var message = {
+            desc: offerDesc,
+            myId: myId,
+            remoteId: remoteId
+          };
+
+          // offerDesc.sdp = preferOpus(offerDesc.sdp);
+          pc.setLocalDescription(offerDesc);
+          socket.emit('sendOffer', message);
+          console.log(name, 'send offer to: ', remoteId);
+        }, errorHandle);
+      }
+
+      function createAndSendAnswer(pc, myId, remoteId) {
+        pc.createAnswer(function(answerDesc) {
+          var message = {
+            desc: answerDesc,
+            myId: myId,
+            remoteId: remoteId
+          };
+
+          // answerDesc.sdp = preferOpus(answerDesc.sdp);
+          pc.setLocalDescription(answerDesc);
+          socket.emit('sendAnswer', message);
+          console.log(name, 'send answer to: ', remoteId);
+        }, errorHandle, sdpConstraints);
+      }
+
+      function handleIceCandidate(remoteId) {
+        return function(event) {
+          if (event.candidate) {
+            sendMessage({
+              type: 'candidate',
+              myId: myId,
+              remoteId: remoteId,
+              label: event.candidate.sdpMLineIndex,
+              id: event.candidate.sdpMid,
+              candidate: event.candidate.candidate
+            });
+            console.log(name, 'send candidate to: ', remoteId);
+          }
+        };
+      }
+
+      function handleRemoteStreamAdded(remoteId) {
+        // var videoElement = document.querySelector("#remote_" + remoteId);
+        var videoElement = $("#remote_" + remoteId);
+
+        return function(event) {
+          console.log(videoElement);
+          // videoElement.src = window.URL.createObjectURL(event.stream);
+          videoElement.prop('src', window.URL.createObjectURL(event.stream));
+          console.log('---------------------RemoteStrem Ready--------------------------');
+          console.log('remotePCName: ', remoteId);
+        }
+      }
+
+
+      // ---------------------------------------------------------------------------------------------
+      function errorHandle(e) {
+        console.log(e);
+      }
+
+      function getNewPeerConnectionByRemoteId(remoteId) {
+        var pc = new RTCPeerConnection(null);
+
+        pc.onaddstream = handleRemoteStreamAdded(remoteId);
+        pc.onicecandidate = handleIceCandidate(remoteId);
+
+        return pc;
+      }
+
+      function sendMessage(message){
+        socket.emit('message', message);
+      }
+
+      function getNewVideoElement(id) {
+        return $('<video id="remote_' + id + '"></video>');
+      }
+    </script>
+
+  </body>
+
+</html>
