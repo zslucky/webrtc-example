@@ -3,7 +3,7 @@
 
   <meta charset="utf-8">
 
-  <title>Chapt 3 - Demo 1</title>
+  <title>Chapt 3 - Demo 2</title>
 
   <link rel="stylesheet" type="text/css" href="main.css">
 
@@ -22,6 +22,8 @@
       var remoteVideos = $('#remoteVideos');
       // ---------------------------------------------------------------------------------------------
       var myId;
+      var socketServer = "https://standalone-rtc-server.herokuapp.com";
+      // var socketServer = "http://127.0.0.1:3000";
       var remotePCMap = {};
       var localPCMap = {};
       var localStream;
@@ -50,15 +52,15 @@
         localStream = stream;
         localVideo.prop('src', window.URL.createObjectURL(stream));
         console.log('---------------------LocalStrem Ready--------------------------');
-        socket = io.connect();
-        socket.emit('create or join', {room: 'testRoom', name: name});
+        socket = io.connect(socketServer, {secure: true});
+        socket.emit('create or join', {room: 'testRoom'});
 
-        socket.on('created', function(message) {
-          myId = message.myId;
+        socket.on('created', function(id) {
+          myId = id;
         });
 
         socket.on('joined', function(message) {
-          myId = message.myId;
+          myId = message.clientId;
 
           for (var i = 0; i < message.roomClients.length; i++) {
             var clientId = message.roomClients[i];
@@ -70,39 +72,37 @@
             remotePCMap[clientId] = pc;
 
             pc.addStream(stream);
-            createAndSendOffer(pc, myId, clientId);
+            createAndSendOffer(pc, clientId);
           }
         });
 
-        socket.on('receiveOffer', function(message) {
-          var remoteVideo = getNewVideoElement(message.myId);
-          remoteVideos.append(remoteVideo);
+        socket.on('communication', function(message) {
+          switch (message.type) {
+            case 'offer':
+              var remoteVideo = getNewVideoElement(message.sender);
+              remoteVideos.append(remoteVideo);
 
-          var pc = getNewPeerConnectionByRemoteId(message.myId);
-          remotePCMap[message.myId] = pc;
+              var pc = getNewPeerConnectionByRemoteId(message.sender);
+              remotePCMap[message.sender] = pc;
 
-          console.log('receive offer from: ', message.myId);
-          pc.addStream(stream);
-          pc.setRemoteDescription(new RTCSessionDescription(message.desc));
-          createAndSendAnswer(pc, myId, message.myId);
-        });
+              pc.addStream(stream);
+              pc.setRemoteDescription(new RTCSessionDescription(message.desc));
 
-        socket.on('receiveAnswer', function(message) {
-          var remotePC = remotePCMap[message.myId];
+              createAndSendAnswer(pc, message.sender);
+              break;
+            case 'answer':
+              remotePCMap[message.sender].setRemoteDescription(new RTCSessionDescription(message.desc));
+              break;
+            case 'candidate':
+              var remotePC = remotePCMap[message.sender];
+              var candidate = new RTCIceCandidate({
+                candidate: message.candidate,
+                sdpMLineIndex: message.label
+              });
 
-          console.log('receive answer from: ', message.myId);
-          remotePC.setRemoteDescription(new RTCSessionDescription(message.desc));
-        });
-
-        socket.on('iceCandidate', function(message) {
-          var remotePC = remotePCMap[message.myId];
-          var candidate = new RTCIceCandidate({
-            candidate: message.candidate,
-            sdpMLineIndex: message.label
-          });
-
-          console.log('receive iceCandidate from: ', message.myId);
-          remotePC.addIceCandidate(candidate);
+              remotePC.addIceCandidate(candidate);
+              break;
+          }
         });
 
         // remote disconnect event to remove element.
@@ -110,62 +110,59 @@
       }, errorHandle);
 
       // ---------------------------------------------------------------------------------------------
-      function createAndSendOffer(pc, myId, remoteId) {
+      function createAndSendOffer(pc, sendTo) {
         pc.createOffer(function(offerDesc) {
           var message = {
+            type: 'offer',
             desc: offerDesc,
-            myId: myId,
-            remoteId: remoteId
+            sender: myId,
+            sendTo: sendTo
           };
 
           // offerDesc.sdp = preferOpus(offerDesc.sdp);
           pc.setLocalDescription(offerDesc);
-          socket.emit('sendOffer', message);
-          console.log(name, 'send offer to: ', remoteId);
+          socket.emit('communication', message);
         }, errorHandle);
       }
 
-      function createAndSendAnswer(pc, myId, remoteId) {
+      function createAndSendAnswer(pc, sendTo) {
         pc.createAnswer(function(answerDesc) {
           var message = {
+            type: 'answer',
             desc: answerDesc,
-            myId: myId,
-            remoteId: remoteId
+            sender: myId,
+            sendTo: sendTo
           };
 
           // answerDesc.sdp = preferOpus(answerDesc.sdp);
           pc.setLocalDescription(answerDesc);
-          socket.emit('sendAnswer', message);
-          console.log(name, 'send answer to: ', remoteId);
+          socket.emit('communication', message);
+          console.log(name, 'send answer to: ', sendTo);
         }, errorHandle, sdpConstraints);
       }
 
-      function handleIceCandidate(remoteId) {
+      function handleIceCandidate(sendTo) {
         return function(event) {
           if (event.candidate) {
             sendMessage({
               type: 'candidate',
-              myId: myId,
-              remoteId: remoteId,
+              sender: myId,
+              sendTo: sendTo,
               label: event.candidate.sdpMLineIndex,
               id: event.candidate.sdpMid,
               candidate: event.candidate.candidate
             });
-            console.log(name, 'send candidate to: ', remoteId);
           }
         };
       }
 
-      function handleRemoteStreamAdded(remoteId) {
-        // var videoElement = document.querySelector("#remote_" + remoteId);
-        var videoElement = $("#remote_" + remoteId);
+      function handleRemoteStreamAdded(sendTo) {
+        var videoElement = $("#remote_" + sendTo);
 
         return function(event) {
-          console.log(videoElement);
-          // videoElement.src = window.URL.createObjectURL(event.stream);
           videoElement.prop('src', window.URL.createObjectURL(event.stream));
           console.log('---------------------RemoteStrem Ready--------------------------');
-          console.log('remotePCName: ', remoteId);
+          console.log('remotePCName: ', sendTo);
         }
       }
 
@@ -175,17 +172,17 @@
         console.log(e);
       }
 
-      function getNewPeerConnectionByRemoteId(remoteId) {
+      function getNewPeerConnectionByRemoteId(sendTo) {
         var pc = new RTCPeerConnection(pcConfig);
 
-        pc.onaddstream = handleRemoteStreamAdded(remoteId);
-        pc.onicecandidate = handleIceCandidate(remoteId);
+        pc.onaddstream = handleRemoteStreamAdded(sendTo);
+        pc.onicecandidate = handleIceCandidate(sendTo);
 
         return pc;
       }
 
       function sendMessage(message){
-        socket.emit('message', message);
+        socket.emit('communication', message);
       }
 
       function getNewVideoElement(id) {
